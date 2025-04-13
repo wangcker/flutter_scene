@@ -53,10 +53,9 @@ class ExampleCarState extends State<ExampleCar> {
     });
 
     EnvironmentMap.fromAssets(
-            radianceImagePath: 'assets/little_paris_eiffel_tower.png',
-            irradianceImagePath:
-                'assets/little_paris_eiffel_tower_irradiance.png')
-        .then((environment) {
+      radianceImagePath: 'assets/little_paris_eiffel_tower.png',
+      irradianceImagePath: 'assets/little_paris_eiffel_tower_irradiance.png',
+    ).then((environment) {
       scene.environment.environmentMap = environment;
       scene.environment.exposure = 2.0;
       scene.environment.intensity = 2.0;
@@ -90,23 +89,19 @@ class ExampleCarState extends State<ExampleCar> {
     final wheelSpeed = nodes['WheelBack.L']!.amount;
     wheelRotation += wheelSpeed / 10;
 
-    for (final wheelName in [
-      'WheelBack.L',
-      'WheelBack.R',
-    ]) {
+    for (final wheelName in ['WheelBack.L', 'WheelBack.R']) {
       final wheel = nodes[wheelName]!;
-      wheel.node.localTransform = wheel.startTransform.clone()
-        ..rotate(vm.Vector3(0, 0, -1), wheelRotation);
+      wheel.node.localTransform =
+          wheel.startTransform.clone()
+            ..rotate(vm.Vector3(0, 0, -1), wheelRotation);
     }
 
     final wheelTurn = nodes['WheelFront.L']!.amount;
 
-    for (final wheelName in [
-      'WheelFront.L',
-      'WheelFront.R',
-    ]) {
+    for (final wheelName in ['WheelFront.L', 'WheelFront.R']) {
       final wheel = nodes[wheelName]!;
-      wheel.node.localTransform = wheel.startTransform.clone() *
+      wheel.node.localTransform =
+          wheel.startTransform.clone() *
           vm.Matrix4.rotationY(-wheelTurn / 2) *
           vm.Matrix4.rotationZ(-wheelRotation);
     }
@@ -129,14 +124,15 @@ class ExampleCarState extends State<ExampleCar> {
                   'DoorFront.L',
                   'DoorFront.R',
                   'DoorBack.L',
-                  'DoorBack.R'
+                  'DoorBack.R',
                 ])
                   Slider(
                     value: nodes[doorName]!.amount,
                     onChanged: (value) {
                       final door = nodes[doorName]!;
-                      door.node.localTransform = door.startTransform.clone()
-                        ..rotate(vm.Vector3(0, -1, 0), value * pi / 2);
+                      door.node.localTransform =
+                          door.startTransform.clone()
+                            ..rotate(vm.Vector3(0, -1, 0), value * pi / 2);
                       door.amount = value;
                     },
                   ),
@@ -149,8 +145,9 @@ class ExampleCarState extends State<ExampleCar> {
                   value: nodes['Frunk']!.amount,
                   onChanged: (value) {
                     final door = nodes['Frunk']!;
-                    door.node.localTransform = door.startTransform.clone()
-                      ..rotate(vm.Vector3(0, 0, 1), value * pi / 2);
+                    door.node.localTransform =
+                        door.startTransform.clone()
+                          ..rotate(vm.Vector3(0, 0, 1), value * pi / 2);
                     door.amount = value;
                   },
                 ),
@@ -158,8 +155,9 @@ class ExampleCarState extends State<ExampleCar> {
                   value: nodes['Trunk']!.amount,
                   onChanged: (value) {
                     final door = nodes['Trunk']!;
-                    door.node.localTransform = door.startTransform.clone()
-                      ..rotate(vm.Vector3(0, 0, -1), value * pi / 2);
+                    door.node.localTransform =
+                        door.startTransform.clone()
+                          ..rotate(vm.Vector3(0, 0, -1), value * pi / 2);
                     door.amount = value;
                   },
                 ),
@@ -178,7 +176,7 @@ class ExampleCarState extends State<ExampleCar> {
                   },
                 ),
               ],
-            )
+            ),
           ],
         ),
       ],
