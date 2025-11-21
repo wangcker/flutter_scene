@@ -11,7 +11,8 @@ import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
 abstract class Geometry {
   gpu.BufferView? _vertices;
   int _vertexCount = 0;
-
+  late Uint8List sourceVertices;
+  late Uint8List sourceIndices;
   gpu.BufferView? _indices;
   gpu.IndexType _indexType = gpu.IndexType.int16;
   int _indexCount = 0;
@@ -67,7 +68,8 @@ abstract class Geometry {
       default:
         throw Exception('Unknown vertex buffer type');
     }
-
+    geometry.sourceIndices = indices;
+    geometry.sourceVertices = vertices;
     geometry.uploadVertexData(
       ByteData.sublistView(vertices),
       vertexCount,
@@ -92,6 +94,8 @@ abstract class Geometry {
         _indexCount = indices.lengthInBytes ~/ 4;
     }
   }
+
+  get indexCount => _indexCount;
 
   void uploadVertexData(
     ByteData vertices,

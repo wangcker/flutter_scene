@@ -137,4 +137,7 @@ abstract class Material {
   bool isOpaque() {
     return true;
   }
+
+  bool highlight = false;
+  bool lastRender = false;
 }

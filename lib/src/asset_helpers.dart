@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_gpu/gpu.dart' as gpu;
 
 Future<gpu.Texture> gpuTextureFromImage(ui.Image image) async {
-  final byteData = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+  final byteData = await image.toByteData();
   if (byteData == null) {
     throw Exception('Failed to get RGBA data from image.');
   }

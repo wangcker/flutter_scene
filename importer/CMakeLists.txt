@@ -16,10 +16,6 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/google/flatbuffers.git
     GIT_TAG        129ef422e8a4e89d87a7216a865602673a6d0bf3
 )
-<<<<<<< HEAD
-#FetchContent_MakeAvailable(flatbuffers)
-=======
->>>>>>> ff0eb03314dee5c1c79f937802a5ef538886e5ce
 
 FetchContent_Declare(
     tinygltf

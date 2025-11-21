@@ -31,8 +31,9 @@ void buildModels({
     final importerResult = Process.runSync(
       dartExec.toFilePath(),
       [
-        '--enable-experiment=native-assets',
+        // '--enable-experiment=native-assets',
         'run',
+        '--enable-experiment=native-assets',
         'flutter_scene_importer:import',
         '--input',
         inputFilePath,

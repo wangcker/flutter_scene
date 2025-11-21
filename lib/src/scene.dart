@@ -1,5 +1,6 @@
 import 'dart:developer';
 import 'dart:ui' as ui;
+import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_gpu/gpu.dart' as gpu;
@@ -41,17 +42,19 @@ enum AntiAliasingMode { none, msaa }
 /// It contains a root [Node] that serves as the entry point for all nodes in this `Scene`, and
 /// it provides methods for adding and removing nodes from the scene graph.
 base class Scene implements SceneGraph {
-  Scene() {
+  Scene({AntiAliasingMode antiAliasingMode = AntiAliasingMode.msaa}) {
     initializeStaticResources();
     root.registerAsRoot(this);
-    antiAliasingMode = AntiAliasingMode.msaa;
+    this.antiAliasingMode = antiAliasingMode;
   }
 
   static Future<void>? _initializeStaticResources;
   static bool _readyToRender = false;
 
   AntiAliasingMode _antiAliasingMode = AntiAliasingMode.none;
-
+  //Image? depthImage;
+  PerspectiveCamera? camera;
+  Size screenSize = Size.zero;
   set antiAliasingMode(AntiAliasingMode value) {
     switch (value) {
       case AntiAliasingMode.none:
@@ -178,6 +181,10 @@ base class Scene implements SceneGraph {
             ? renderTarget.colorAttachments[0].resolveTexture!
             : renderTarget.colorAttachments[0].texture;
     final image = texture.asImage();
+    // if (renderTarget.depthStencilAttachment != null) {
+    //   depthImage =
+    //       renderTarget.depthStencilAttachment?.texture.asImage().clone();
+    // }
     canvas.drawImage(image, drawArea.topLeft, ui.Paint());
   }
 }

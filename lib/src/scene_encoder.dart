@@ -29,7 +29,7 @@ base class SceneEncoder {
     // Begin the opaque render pass.
     _renderPass = _commandBuffer.createRenderPass(renderTarget);
     _renderPass.setDepthWriteEnable(true);
-    _renderPass.setColorBlendEnable(false);
+    _renderPass.setColorBlendEnable(true);
     _renderPass.setDepthCompareOperation(gpu.CompareFunction.lessEqual);
   }
 
@@ -40,12 +40,25 @@ base class SceneEncoder {
   late final gpu.HostBuffer _transientsBuffer;
   late final gpu.RenderPass _renderPass;
   final List<_TranslucentRecord> _translucentRecords = [];
+  final List<_TranslucentRecord> _highlightRecords = [];
+  final List<_TranslucentRecord> _lastRenderRecords = [];
 
   void encode(Matrix4 worldTransform, Geometry geometry, Material material) {
     if (material.isOpaque()) {
-      _encode(worldTransform, geometry, material);
-      return;
+      if (material.lastRender) {
+        _lastRenderRecords.add(
+          _TranslucentRecord(worldTransform, geometry, material),
+        );
+      } else if (!material.highlight) {
+        _encode(worldTransform, geometry, material);
+        return;
+      } else {
+        _highlightRecords.add(
+          _TranslucentRecord(worldTransform, geometry, material),
+        );
+      }
     }
+
     _translucentRecords.add(
       _TranslucentRecord(worldTransform, geometry, material),
     );
@@ -87,7 +100,7 @@ base class SceneEncoder {
     _renderPass.setColorBlendEquation(
       gpu.ColorBlendEquation(
         colorBlendOperation: gpu.BlendOperation.add,
-        sourceColorBlendFactor: gpu.BlendFactor.one,
+        sourceColorBlendFactor: gpu.BlendFactor.sourceAlpha,
         destinationColorBlendFactor: gpu.BlendFactor.oneMinusSourceAlpha,
         alphaBlendOperation: gpu.BlendOperation.add,
         sourceAlphaBlendFactor: gpu.BlendFactor.one,
@@ -97,6 +110,39 @@ base class SceneEncoder {
     for (var record in _translucentRecords) {
       _encode(record.worldTransform, record.geometry, record.material);
     }
+    _renderPass.setDepthWriteEnable(false);
+    _renderPass.setDepthCompareOperation(gpu.CompareFunction.greater);
+    _renderPass.setColorBlendEquation(
+      gpu.ColorBlendEquation(
+        colorBlendOperation: gpu.BlendOperation.add,
+        sourceColorBlendFactor: gpu.BlendFactor.one,
+        destinationColorBlendFactor: gpu.BlendFactor.one,
+        alphaBlendOperation: gpu.BlendOperation.add,
+        sourceAlphaBlendFactor: gpu.BlendFactor.one,
+        destinationAlphaBlendFactor: gpu.BlendFactor.one,
+      ),
+    );
+    for (var record in _highlightRecords) {
+      _encode(record.worldTransform, record.geometry, record.material);
+    }
+    _renderPass.setDepthWriteEnable(false);
+    _renderPass.setDepthCompareOperation(gpu.CompareFunction.lessEqual);
+    _renderPass.setColorBlendEquation(
+      gpu.ColorBlendEquation(
+        colorBlendOperation: gpu.BlendOperation.add,
+        sourceColorBlendFactor: gpu.BlendFactor.sourceAlpha,
+        destinationColorBlendFactor: gpu.BlendFactor.oneMinusSourceAlpha,
+        alphaBlendOperation: gpu.BlendOperation.add,
+        sourceAlphaBlendFactor: gpu.BlendFactor.zero,
+        destinationAlphaBlendFactor: gpu.BlendFactor.one,
+      ),
+    );
+    for (var record in _lastRenderRecords) {
+      _encode(record.worldTransform, record.geometry, record.material);
+    }
+
+    _lastRenderRecords.clear();
+    _highlightRecords.clear();
     _translucentRecords.clear();
     _commandBuffer.submit();
     _transientsBuffer.reset();

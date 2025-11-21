@@ -4,6 +4,7 @@ import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' hide Matrix4;
 import 'package:flutter_gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene/src/scene.dart';
 import 'package:flutter_scene/src/animation.dart';
 import 'package:flutter_scene/src/asset_helpers.dart';
@@ -85,6 +86,33 @@ base class Node implements SceneGraph {
   List<Animation> get parsedAnimations => _animations;
 
   AnimationPlayer? _animationPlayer;
+
+  // Future<bool> isVisibleInScene(Scene scene, Camera camera) async {
+  //   try {
+  //     Vector3 worldGet = globalTransform.getTranslation();
+  //     Vector3 screenGet = worldGet.clone();
+  //     screenGet.applyProjection(camera.getViewTransform(scene.screenSize));
+  //     ByteData? byteData = await scene.depthImage!.toByteData(
+  //       format: ImageByteFormat.rawExtendedRgba128,
+  //     );
+  //     if (byteData == null) {
+  //       return false;
+  //     }
+  //     int depth =
+  //         byteData!.getInt32(
+  //           (screenGet.y * scene.screenSize.width).toInt() +
+  //               screenGet.x.toInt(),
+  //         ) >>
+  //         8;
+  //     if (screenGet.z > depth) {
+  //       return false;
+  //     }
+  //     return true;
+  //   } catch (e) {
+  //     debugPrint("isVisibleInScene error:$e");
+  //     return false;
+  //   }
+  // }
 
   Node? getChildByName(String name, {bool excludeAnimationPlayers = false}) {
     for (var child in children) {
