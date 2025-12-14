@@ -10,6 +10,7 @@ import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
 
 abstract class Material {
   static gpu.Texture? _whitePlaceholderTexture;
+  //static gpu.Texture? _occulusionPlaceholderTexture;
 
   static gpu.Texture getWhitePlaceholderTexture() {
     if (_whitePlaceholderTexture != null) {
@@ -24,12 +25,36 @@ abstract class Material {
       throw Exception('Failed to create white placeholder texture.');
     }
     _whitePlaceholderTexture!.overwrite(
-      Uint32List.fromList(<int>[0xFFFF7F7F]).buffer.asByteData(),
+      //Uint32List.fromList(<int>[0xFFFF7F7F]).buffer.asByteData(),
+      Uint32List.fromList(<int>[0xFFFFFFFF]).buffer.asByteData(),
     );
     return _whitePlaceholderTexture!;
   }
 
+  // static gpu.Texture getOcculusionPlaceholderTexture() {
+  //   if (_occulusionPlaceholderTexture != null) {
+  //     return _occulusionPlaceholderTexture!;
+  //   }
+  //   _occulusionPlaceholderTexture = gpu.gpuContext.createTexture(
+  //     gpu.StorageMode.hostVisible,
+  //     1,
+  //     1,
+  //   );
+  //   if (_occulusionPlaceholderTexture == null) {
+  //     throw Exception('Failed to create white placeholder texture.');
+  //   }
+  //   _occulusionPlaceholderTexture!.overwrite(
+  //     //Uint32List.fromList(<int>[0xFFFF7F7F]).buffer.asByteData(),
+  //     Uint32List.fromList(<int>[0xFFFFFFFF]).buffer.asByteData(),
+  //   );
+  //   return _occulusionPlaceholderTexture!;
+  // }
+
   static gpu.Texture whitePlaceholder(gpu.Texture? texture) {
+    return texture ?? getWhitePlaceholderTexture();
+  }
+
+  static gpu.Texture occlusionPlaceholder(gpu.Texture? texture) {
     return texture ?? getWhitePlaceholderTexture();
   }
 
@@ -49,6 +74,7 @@ abstract class Material {
     }
     _normalPlaceholderTexture!.overwrite(
       Uint32List.fromList(<int>[0xFFFF7574]).buffer.asByteData(),
+      //Uint32List.fromList(<int>[0xFF000000]).buffer.asByteData(),
     );
     return _normalPlaceholderTexture!;
   }

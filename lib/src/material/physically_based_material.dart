@@ -36,7 +36,8 @@ class PhysicallyBasedMaterial extends Material {
 
     // Metallic-roughness.
 
-    material.metallicFactor = fbMaterial.metallicFactor;
+    material.metallicFactor = 0;
+    // fbMaterial.metallicFactor;
     material.roughnessFactor = fbMaterial.roughnessFactor;
 
     debugPrint('Total texture count: ${textures.length}');
@@ -99,7 +100,7 @@ class PhysicallyBasedMaterial extends Material {
   double vertexColorWeight = 1.0;
 
   gpu.Texture? metallicRoughnessTexture;
-  double metallicFactor = 1.0;
+  double metallicFactor = 0;
   double roughnessFactor = 1.0;
 
   gpu.Texture? normalTexture;
@@ -152,7 +153,7 @@ class PhysicallyBasedMaterial extends Material {
     );
     pass.bindTexture(
       fragmentShader.getUniformSlot('emissive_texture'),
-      Material.whitePlaceholder(emissiveTexture),
+      Material.occlusionPlaceholder(emissiveTexture),
       sampler: gpu.SamplerOptions(
         widthAddressMode: gpu.SamplerAddressMode.repeat,
         heightAddressMode: gpu.SamplerAddressMode.repeat,
@@ -160,7 +161,7 @@ class PhysicallyBasedMaterial extends Material {
     );
     pass.bindTexture(
       fragmentShader.getUniformSlot('metallic_roughness_texture'),
-      Material.whitePlaceholder(metallicRoughnessTexture),
+      Material.occlusionPlaceholder(metallicRoughnessTexture),
       sampler: gpu.SamplerOptions(
         widthAddressMode: gpu.SamplerAddressMode.repeat,
         heightAddressMode: gpu.SamplerAddressMode.repeat,
@@ -176,7 +177,7 @@ class PhysicallyBasedMaterial extends Material {
     );
     pass.bindTexture(
       fragmentShader.getUniformSlot('occlusion_texture'),
-      Material.whitePlaceholder(occlusionTexture),
+      Material.occlusionPlaceholder(occlusionTexture),
       sampler: gpu.SamplerOptions(
         widthAddressMode: gpu.SamplerAddressMode.repeat,
         heightAddressMode: gpu.SamplerAddressMode.repeat,

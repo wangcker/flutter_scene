@@ -10,12 +10,13 @@ mat3 CotangentFrame(vec3 normal, vec3 view_vector, vec2 uv) {
   vec2 d_uv_x = dFdx(uv);
   vec2 d_uv_y = dFdy(uv);
 
-  // Force the UV derivatives to be non-zero. This is a hack to force correct
-  // behavior when UV islands are concentrated to a single point.
-  if (length(d_uv_x) == 0.0) {
+  // Force the UV derivatives to be non-zero using epsilon check.
+  // Using == 0.0 is unsafe due to floating point precision.
+  const float kEps = 1e-6;
+  if (length(d_uv_x) < kEps) {
     d_uv_x = vec2(1.0, 0.0);
   }
-  if (length(d_uv_y) == 0.0) {
+  if (length(d_uv_y) < kEps) {
     d_uv_y = vec2(0.0, 1.0);
   }
 
@@ -26,16 +27,32 @@ mat3 CotangentFrame(vec3 normal, vec3 view_vector, vec2 uv) {
   vec3 B = view_y_perp * d_uv_x.y + view_x_perp * d_uv_y.y;
 
   // Construct a scale-invariant frame.
+  // Important: normalize both T and B, and use the normalized normal.
   float invmax = inversesqrt(max(dot(T, T), dot(B, B)));
-  return mat3(T * invmax, B * invmax, normal);
+  return mat3(normalize(T * invmax), normalize(B * invmax), normalize(normal));
 }
 
 vec3 PerturbNormal(sampler2D normal_tex, vec3 normal, vec3 view_vector,
                    vec2 texcoord) {
   vec3 map = texture(normal_tex, texcoord).xyz;
-  map = map * 255. / 127. - 128. / 127.;
-  // map.z = sqrt(1. - dot(map.xy, map.xy));
-  // map.y = -map.y;
+
+  // Standard unpack: [0,1] -> [-1,1]
+  map = map * 2.0 - 1.0;
+
+  // If normal map follows DirectX convention (Y-down), uncomment:
+  map.y = -map.y;
+
+  // Reconstruct Z if normal map only stores XY.
+  // This is critical for correct bottom-facing surfaces.
+  float xy_len_sq = dot(map.xy, map.xy);
+  if (xy_len_sq > 1.0) {
+    // Out-of-range XY: normalize to avoid artifacts
+    map.xy = normalize(map.xy);
+    map.z = 0.0;
+  } else {
+    map.z = sqrt(max(0.0, 1.0 - xy_len_sq));
+  }
+
   mat3 TBN = CotangentFrame(normal, -view_vector, texcoord);
-  return normalize(TBN * map).xyz;
+  return normalize(TBN * map);
 }

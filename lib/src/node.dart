@@ -242,6 +242,7 @@ base class Node implements SceneGraph {
     // Unpack animations.
     if (fbScene.animations != null) {
       for (fb.Animation fbAnimation in fbScene.animations!) {
+        if (fbAnimation == null || fbAnimation.channels == null) continue;
         result._animations.add(
           Animation.fromFlatbuffer(fbAnimation, sceneNodes),
         );
