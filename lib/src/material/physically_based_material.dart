@@ -36,8 +36,7 @@ class PhysicallyBasedMaterial extends Material {
 
     // Metallic-roughness.
 
-    material.metallicFactor = 0;
-    // fbMaterial.metallicFactor;
+    material.metallicFactor = fbMaterial.metallicFactor;
     material.roughnessFactor = fbMaterial.roughnessFactor;
 
     debugPrint('Total texture count: ${textures.length}');
