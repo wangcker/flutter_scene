@@ -94,6 +94,9 @@ class PhysicallyBasedMaterial extends Material {
     setFragmentShader(baseShaderLibrary['StandardFragment']!);
   }
 
+  /// 预分配的 UBO 缓冲区，避免每帧创建新数组
+  final Float32List _fragInfoFloats = Float32List(16);
+
   gpu.Texture? baseColorTexture;
   Vector4 baseColorFactor = Colors.white;
   double vertexColorWeight = 1.0;
@@ -123,24 +126,28 @@ class PhysicallyBasedMaterial extends Material {
 
     Environment env = this.environment ?? environment;
 
-    var fragInfo = Float32List.fromList([
-      baseColorFactor.r, baseColorFactor.g,
-      baseColorFactor.b, baseColorFactor.a, // color
-      emissiveFactor.r, emissiveFactor.g,
-      emissiveFactor.b,
-      emissiveFactor.a, // emissive_factor
-      vertexColorWeight, // vertex_color_weight
-      environment.exposure, // exposure
-      metallicFactor, // metallic
-      roughnessFactor, // roughness
-      normalTexture != null ? 1.0 : 0.0, // has_normal_map
-      normalScale, // normal_scale
-      occlusionStrength, // occlusion_strength
-      environment.intensity, // environment_intensity
-    ]);
+    // 直接写入预分配的缓冲区，避免每帧创建新数组
+    final fragInfo = _fragInfoFloats;
+    fragInfo[0] = baseColorFactor.r;
+    fragInfo[1] = baseColorFactor.g;
+    fragInfo[2] = baseColorFactor.b;
+    fragInfo[3] = baseColorFactor.a;
+    fragInfo[4] = emissiveFactor.r;
+    fragInfo[5] = emissiveFactor.g;
+    fragInfo[6] = emissiveFactor.b;
+    fragInfo[7] = emissiveFactor.a;
+    fragInfo[8] = vertexColorWeight;
+    fragInfo[9] = environment.exposure;
+    fragInfo[10] = metallicFactor;
+    fragInfo[11] = roughnessFactor;
+    fragInfo[12] = normalTexture != null ? 1.0 : 0.0;
+    fragInfo[13] = normalScale;
+    fragInfo[14] = occlusionStrength;
+    fragInfo[15] = environment.intensity;
+
     pass.bindUniform(
       fragmentShader.getUniformSlot("FragInfo"),
-      transientsBuffer.emplace(ByteData.sublistView(fragInfo)),
+      transientsBuffer.emplace(fragInfo.buffer.asByteData()),
     );
     pass.bindTexture(
       fragmentShader.getUniformSlot('base_color_texture'),

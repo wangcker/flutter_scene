@@ -50,7 +50,12 @@ base class Mesh {
   ) {
     for (var primitive in primitives) {
       primitive.geometry.setJointsTexture(jointsTexture, jointTextureWidth);
-      encoder.encode(worldTransform, primitive.geometry, primitive.material);
+      encoder.encodeWithBounds(
+        worldTransform,
+        primitive.geometry,
+        primitive.material,
+        primitive.geometry.bounds,
+      );
     }
   }
 }

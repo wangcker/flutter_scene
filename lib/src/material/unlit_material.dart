@@ -41,6 +41,9 @@ class UnlitMaterial extends Material {
     baseColorTexture = Material.whitePlaceholder(colorTexture);
   }
 
+  /// 预分配的 UBO 缓冲区，避免每帧创建新数组
+  final Float32List _fragInfoFloats = Float32List(5);
+
   late gpu.Texture baseColorTexture;
   Vector4 baseColorFactor = Colors.white;
   double vertexColorWeight = 1.0;
@@ -53,14 +56,17 @@ class UnlitMaterial extends Material {
   ) {
     super.bind(pass, transientsBuffer, environment);
 
-    var fragInfo = Float32List.fromList([
-      baseColorFactor.r, baseColorFactor.g,
-      baseColorFactor.b, baseColorFactor.a, // color
-      vertexColorWeight, // vertex_color_weight
-    ]);
+    // 直接写入预分配的缓冲区，避免每帧创建新数组
+    final fragInfo = _fragInfoFloats;
+    fragInfo[0] = baseColorFactor.r;
+    fragInfo[1] = baseColorFactor.g;
+    fragInfo[2] = baseColorFactor.b;
+    fragInfo[3] = baseColorFactor.a;
+    fragInfo[4] = vertexColorWeight;
+
     pass.bindUniform(
       fragmentShader.getUniformSlot("FragInfo"),
-      transientsBuffer.emplace(ByteData.sublistView(fragInfo)),
+      transientsBuffer.emplace(fragInfo.buffer.asByteData()),
     );
     pass.bindTexture(
       fragmentShader.getUniformSlot('base_color_texture'),

@@ -4,15 +4,56 @@ import 'package:flutter_gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/camera.dart';
+
 import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/material.dart';
+import 'package:flutter_scene/src/pipeline_cache.dart';
 
+/// 可复用的透明物体记录
 base class _TranslucentRecord {
-  _TranslucentRecord(this.worldTransform, this.geometry, this.material);
-  final Matrix4 worldTransform;
-  final Geometry geometry;
-  final Material material;
+  /// 存储变换矩阵的副本，避免引用问题
+  final Matrix4 worldTransform = Matrix4.identity();
+  late Geometry geometry;
+  late Material material;
+
+  /// 用于排序的距离平方（避免每次比较都计算平方根）
+  double distanceSquared = 0.0;
+
+  void set(Matrix4 transform, Geometry geo, Material mat) {
+    worldTransform.setFrom(transform);
+    geometry = geo;
+    material = mat;
+  }
+}
+
+/// 对象池，用于复用 _TranslucentRecord 对象
+class _RecordPool {
+  final List<_TranslucentRecord> _pool = [];
+  int _activeCount = 0;
+
+  _TranslucentRecord acquire(
+    Matrix4 worldTransform,
+    Geometry geometry,
+    Material material,
+  ) {
+    _TranslucentRecord record;
+    if (_activeCount < _pool.length) {
+      record = _pool[_activeCount];
+    } else {
+      record = _TranslucentRecord();
+      _pool.add(record);
+    }
+    _activeCount++;
+    record.set(worldTransform, geometry, material);
+    return record;
+  }
+
+  void reset() {
+    _activeCount = 0;
+  }
+
+  int get length => _activeCount;
 }
 
 base class SceneEncoder {
@@ -23,6 +64,7 @@ base class SceneEncoder {
     this._environment,
   ) {
     _cameraTransform = _camera.getViewTransform(dimensions);
+    _frustum = Frustum.matrix(_cameraTransform);
     _commandBuffer = gpu.gpuContext.createCommandBuffer();
     _transientsBuffer = gpu.gpuContext.createHostBuffer();
 
@@ -36,37 +78,75 @@ base class SceneEncoder {
   final Camera _camera;
   final Environment _environment;
   late final Matrix4 _cameraTransform;
+  late final Frustum _frustum;
   late final gpu.CommandBuffer _commandBuffer;
   late final gpu.HostBuffer _transientsBuffer;
   late final gpu.RenderPass _renderPass;
+
+  /// 对象池，避免每帧创建新对象
+  final _RecordPool _translucentPool = _RecordPool();
+  final _RecordPool _highlightPool = _RecordPool();
+  final _RecordPool _lastRenderPool = _RecordPool();
+
   final List<_TranslucentRecord> _translucentRecords = [];
   final List<_TranslucentRecord> _highlightRecords = [];
   final List<_TranslucentRecord> _lastRenderRecords = [];
 
+  /// 剔除统计
+  int _culledCount = 0;
+  int _renderedCount = 0;
+
+  int get culledCount => _culledCount;
+  int get renderedCount => _renderedCount;
+
+  /// 获取视锥体用于外部剔除检测
+  Frustum get frustum => _frustum;
+
+  /// 带包围盒的编码方法，支持视锥剔除
+  void encodeWithBounds(
+    Matrix4 worldTransform,
+    Geometry geometry,
+    Material material,
+    Aabb3? bounds,
+  ) {
+    // 视锥剔除
+    if (bounds != null) {
+      final worldBounds = bounds.transformed(worldTransform, Aabb3());
+      if (!_frustum.intersectsWithAabb3(worldBounds)) {
+        _culledCount++;
+        return;
+      }
+    }
+
+    encode(worldTransform, geometry, material);
+  }
+
   void encode(Matrix4 worldTransform, Geometry geometry, Material material) {
+    _renderedCount++;
     if (material.isOpaque()) {
       if (material.lastRender) {
         _lastRenderRecords.add(
-          _TranslucentRecord(worldTransform, geometry, material),
+          _lastRenderPool.acquire(worldTransform, geometry, material),
         );
       } else if (!material.highlight) {
         _encode(worldTransform, geometry, material);
         return;
       } else {
         _highlightRecords.add(
-          _TranslucentRecord(worldTransform, geometry, material),
+          _highlightPool.acquire(worldTransform, geometry, material),
         );
       }
     }
 
     _translucentRecords.add(
-      _TranslucentRecord(worldTransform, geometry, material),
+      _translucentPool.acquire(worldTransform, geometry, material),
     );
   }
 
   void _encode(Matrix4 worldTransform, Geometry geometry, Material material) {
     _renderPass.clearBindings();
-    var pipeline = gpu.gpuContext.createRenderPipeline(
+    // 使用管线缓存，避免每帧重建管线
+    var pipeline = PipelineCache.instance.getOrCreate(
       geometry.vertexShader,
       material.fragmentShader,
     );
@@ -84,15 +164,19 @@ base class SceneEncoder {
   }
 
   void finish() {
-    _translucentRecords.sort((a, b) {
-      var aDistance = a.worldTransform.getTranslation().distanceTo(
-        _camera.position,
-      );
-      var bDistance = b.worldTransform.getTranslation().distanceTo(
-        _camera.position,
-      );
-      return bDistance.compareTo(aDistance);
-    });
+    // 使用距离平方进行排序，避免平方根计算
+    final cameraPos = _camera.position;
+    for (var record in _translucentRecords) {
+      final translation = record.worldTransform.getTranslation();
+      final dx = translation.x - cameraPos.x;
+      final dy = translation.y - cameraPos.y;
+      final dz = translation.z - cameraPos.z;
+      record.distanceSquared = dx * dx + dy * dy + dz * dz;
+    }
+    _translucentRecords.sort(
+      (a, b) => b.distanceSquared.compareTo(a.distanceSquared),
+    );
+
     _renderPass.setDepthWriteEnable(false);
     _renderPass.setColorBlendEnable(true);
     // Additive source-over blending.
@@ -144,6 +228,12 @@ base class SceneEncoder {
     _lastRenderRecords.clear();
     _highlightRecords.clear();
     _translucentRecords.clear();
+
+    // 重置对象池
+    _translucentPool.reset();
+    _highlightPool.reset();
+    _lastRenderPool.reset();
+
     _commandBuffer.submit();
     _transientsBuffer.reset();
   }

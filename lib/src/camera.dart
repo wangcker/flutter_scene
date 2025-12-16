@@ -6,6 +6,9 @@ import 'package:vector_math/vector_math.dart';
 abstract class Camera {
   Vector3 get position;
   Matrix4 getViewTransform(ui.Size dimensions);
+
+  /// 将屏幕坐标转换为世界空间射线
+  Ray screenPointToRay(ui.Offset screenPosition, ui.Size viewportSize);
 }
 
 Matrix4 _matrix4LookAt(Vector3 position, Vector3 target, Vector3 up) {
@@ -91,5 +94,42 @@ class PerspectiveCamera extends Camera {
           fovFar,
         ) *
         _matrix4LookAt(position, target, up);
+  }
+
+  /// 将屏幕坐标转换为世界空间射线
+  @override
+  Ray screenPointToRay(ui.Offset screenPosition, ui.Size viewportSize) {
+    // 将屏幕坐标转换为 NDC（归一化设备坐标）[-1, 1]
+    final ndcX = (2.0 * screenPosition.dx / viewportSize.width) - 1.0;
+    final ndcY = 1.0 - (2.0 * screenPosition.dy / viewportSize.height);
+
+    // 获取视图投影矩阵的逆矩阵
+    final viewProjection = getViewTransform(viewportSize);
+    final inverseViewProjection = Matrix4.copy(viewProjection)..invert();
+
+    // 近平面和远平面上的点
+    final nearPoint = Vector4(ndcX, ndcY, 0.0, 1.0);
+    final farPoint = Vector4(ndcX, ndcY, 1.0, 1.0);
+
+    // 变换到世界空间
+    inverseViewProjection.transform(nearPoint);
+    inverseViewProjection.transform(farPoint);
+
+    // 透视除法
+    final nearWorld = Vector3(
+      nearPoint.x / nearPoint.w,
+      nearPoint.y / nearPoint.w,
+      nearPoint.z / nearPoint.w,
+    );
+    final farWorld = Vector3(
+      farPoint.x / farPoint.w,
+      farPoint.y / farPoint.w,
+      farPoint.z / farPoint.w,
+    );
+
+    // 计算射线方向
+    final direction = (farWorld - nearWorld).normalized();
+
+    return Ray.originDirection(nearWorld, direction);
   }
 }

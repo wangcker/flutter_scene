@@ -8,178 +8,100 @@ import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
 import 'package:vector_math/vector_math.dart';
 
-/// 用于在 Isolate 中解析的纹理数据
-class _ParsedTextureData {
-  _ParsedTextureData({
-    this.uri,
-    this.embeddedImageBytes,
-    this.width,
-    this.height,
-  });
+// ============================================================================
+// Isolate 解析用的简化类型定义（使用 typedef 和 Records 简化）
+// ============================================================================
 
-  final String? uri;
-  final Uint8List? embeddedImageBytes;
-  final int? width;
-  final int? height;
+/// 纹理数据: (uri, embeddedBytes, width, height)
+typedef _TextureData =
+    ({String? uri, Uint8List? bytes, int? width, int? height});
 
-  bool get hasEmbeddedImage => embeddedImageBytes != null;
-  bool get hasUri => uri != null;
-}
+/// 材质数据 Map（使用 Map 而非类，键名与属性对应）
+typedef _MaterialData = Map<String, dynamic>;
 
-/// 用于在 Isolate 中解析的节点数据
-class _ParsedNodeData {
-  _ParsedNodeData({
-    required this.name,
-    required this.localTransformStorage,
-    required this.childrenIndices,
-    this.meshPrimitives,
-    this.skinData,
-  });
+/// 骨骼数据: (jointIndices, inverseBindMatricesStorage)
+typedef _SkinData = ({List<int> joints, List<Float64List> matrices});
 
-  final String name;
-  final Float64List localTransformStorage;
-  final List<int> childrenIndices;
-  final List<_ParsedMeshPrimitiveData>? meshPrimitives;
-  final _ParsedSkinData? skinData;
-}
+/// 网格图元数据
+typedef _MeshData =
+    ({
+      Uint8List vertices,
+      Uint8List indices,
+      int vertexCount,
+      int indexType,
+      bool isSkinned,
+      _MaterialData? material,
+    });
 
-/// 用于在 Isolate 中解析的网格图元数据
-class _ParsedMeshPrimitiveData {
-  _ParsedMeshPrimitiveData({
-    required this.verticesBytes,
-    required this.indicesBytes,
-    required this.vertexCount,
-    required this.indexType,
-    required this.isSkinned,
-    this.materialData,
-  });
+/// 动画通道数据
+typedef _ChannelData =
+    ({
+      int nodeIndex,
+      int property,
+      List<double> timeline,
+      List<List<double>> values,
+    });
 
-  final Uint8List verticesBytes;
-  final Uint8List indicesBytes;
-  final int vertexCount;
-  final int indexType; // 0 = int16, 1 = int32
-  final bool isSkinned;
-  final _ParsedMaterialData? materialData;
-}
+/// 动画数据
+typedef _AnimData = ({String name, List<_ChannelData> channels});
 
-/// 用于在 Isolate 中解析的材质数据
-class _ParsedMaterialData {
-  _ParsedMaterialData({
-    required this.type,
-    this.baseColorFactor,
-    this.baseColorTextureIndex,
-    this.metallicFactor,
-    this.roughnessFactor,
-    this.metallicRoughnessTextureIndex,
-    this.normalTextureIndex,
-    this.normalScale,
-    this.emissiveFactor,
-    this.emissiveTextureIndex,
-    this.occlusionStrength,
-    this.occlusionTextureIndex,
-  });
+/// 节点数据
+typedef _NodeData =
+    ({
+      String name,
+      Float64List transform,
+      List<int> children,
+      List<_MeshData>? meshes,
+      _SkinData? skin,
+    });
 
-  final int type; // 0 = unlit, 1 = physically based
-  final List<double>? baseColorFactor;
-  final int? baseColorTextureIndex;
-  final double? metallicFactor;
-  final double? roughnessFactor;
-  final int? metallicRoughnessTextureIndex;
-  final int? normalTextureIndex;
-  final double? normalScale;
-  final List<double>? emissiveFactor;
-  final int? emissiveTextureIndex;
-  final double? occlusionStrength;
-  final int? occlusionTextureIndex;
-}
-
-/// 用于在 Isolate 中解析的骨骼数据
-class _ParsedSkinData {
-  _ParsedSkinData({
-    required this.jointIndices,
-    required this.inverseBindMatricesStorage,
-  });
-
-  final List<int> jointIndices;
-  final List<Float64List> inverseBindMatricesStorage;
-}
-
-/// 用于在 Isolate 中解析的动画数据
-class _ParsedAnimationData {
-  _ParsedAnimationData({required this.name, required this.channels});
-
-  final String name;
-  final List<_ParsedAnimationChannelData> channels;
-}
-
-class _ParsedAnimationChannelData {
-  _ParsedAnimationChannelData({
-    required this.nodeIndex,
-    required this.property,
-    required this.timeline,
-    required this.values,
-  });
-
-  final int nodeIndex;
-  final int property; // 0 = translation, 1 = rotation, 2 = scale
-  final List<double> timeline;
-  final List<List<double>> values;
-}
-
-/// Isolate 解析后返回的完整场景数据
-class _ParsedSceneData {
-  _ParsedSceneData({
-    required this.rootTransformStorage,
-    required this.textures,
-    required this.nodes,
-    required this.rootChildrenIndices,
-    required this.animations,
-    required this.nodeCount,
-    required this.textureCount,
-  });
-
-  final Float64List rootTransformStorage;
-  final List<_ParsedTextureData> textures;
-  final List<_ParsedNodeData> nodes;
-  final List<int> rootChildrenIndices;
-  final List<_ParsedAnimationData> animations;
-  final int nodeCount;
-  final int textureCount;
-}
+/// 完整场景数据
+typedef _SceneData =
+    ({
+      Float64List rootTransform,
+      List<_TextureData> textures,
+      List<_NodeData> nodes,
+      List<int> rootChildren,
+      List<_AnimData> animations,
+    });
 
 /// 在 Isolate 中执行 Flatbuffer 解析的顶层函数
-_ParsedSceneData _parseFlatbufferInIsolate(Uint8List bytes) {
+_SceneData _parseFlatbufferInIsolate(Uint8List bytes) {
   final fbScene = fb.Scene(bytes);
 
   // 解析根节点变换
   final rootTransform = fbScene.transform?.toMatrix4() ?? Matrix4.identity();
 
   // 解析纹理数据（只提取信息，不创建 GPU 资源）
-  final List<_ParsedTextureData> parsedTextures = [];
+  final List<_TextureData> textures = [];
   for (fb.Texture fbTexture in fbScene.textures ?? []) {
     if (fbTexture.embeddedImage != null) {
       final image = fbTexture.embeddedImage!;
-      parsedTextures.add(
-        _ParsedTextureData(
-          embeddedImageBytes: Uint8List.fromList(image.bytes as List<int>),
-          width: image.width,
-          height: image.height,
-        ),
-      );
+      textures.add((
+        uri: null,
+        bytes: Uint8List.fromList(image.bytes as List<int>),
+        width: image.width,
+        height: image.height,
+      ));
     } else {
-      parsedTextures.add(_ParsedTextureData(uri: fbTexture.uri));
+      textures.add((
+        uri: fbTexture.uri,
+        bytes: null,
+        width: null,
+        height: null,
+      ));
     }
   }
 
   // 解析节点数据
-  final List<_ParsedNodeData> parsedNodes = [];
+  final List<_NodeData> nodes = [];
   for (fb.Node fbNode in fbScene.nodes ?? []) {
     final localTransform = fbNode.transform?.toMatrix4() ?? Matrix4.identity();
 
     // 解析网格图元
-    List<_ParsedMeshPrimitiveData>? meshPrimitives;
+    List<_MeshData>? meshes;
     if (fbNode.meshPrimitives != null) {
-      meshPrimitives = [];
+      meshes = [];
       for (fb.MeshPrimitive fbPrimitive in fbNode.meshPrimitives!) {
         final isSkinned =
             fbPrimitive.vertices!.runtimeType == fb.SkinnedVertexBuffer;
@@ -206,67 +128,58 @@ _ParsedSceneData _parseFlatbufferInIsolate(Uint8List bytes) {
             fbPrimitive.indices!.type == fb.IndexType.k16Bit ? 0 : 1;
         final perVertexBytes =
             isSkinned
-                ? 68
+                ? 80
                 : 48; // kSkinnedPerVertexSize : kUnskinnedPerVertexSize
         final vertexCount = vertices.length ~/ perVertexBytes;
 
-        // 解析材质
-        _ParsedMaterialData? materialData;
+        // 解析材质为 Map
+        _MaterialData? material;
         if (fbPrimitive.material != null) {
           final fbMat = fbPrimitive.material!;
-          materialData = _ParsedMaterialData(
-            type: fbMat.type == fb.MaterialType.kUnlit ? 0 : 1,
-            baseColorFactor:
-                fbMat.baseColorFactor != null
-                    ? [
-                      fbMat.baseColorFactor!.r,
-                      fbMat.baseColorFactor!.g,
-                      fbMat.baseColorFactor!.b,
-                      fbMat.baseColorFactor!.a,
-                    ]
-                    : null,
-            baseColorTextureIndex:
-                fbMat.baseColorTexture >= 0 ? fbMat.baseColorTexture : null,
-            metallicFactor: fbMat.metallicFactor,
-            roughnessFactor: fbMat.roughnessFactor,
-            metallicRoughnessTextureIndex:
-                fbMat.metallicRoughnessTexture >= 0
-                    ? fbMat.metallicRoughnessTexture
-                    : null,
-            normalTextureIndex:
-                fbMat.normalTexture >= 0 ? fbMat.normalTexture : null,
-            normalScale: fbMat.normalScale,
-            emissiveFactor:
-                fbMat.emissiveFactor != null
-                    ? [
-                      fbMat.emissiveFactor!.x,
-                      fbMat.emissiveFactor!.y,
-                      fbMat.emissiveFactor!.z,
-                    ]
-                    : null,
-            emissiveTextureIndex:
-                fbMat.emissiveTexture >= 0 ? fbMat.emissiveTexture : null,
-            occlusionStrength: fbMat.occlusionStrength,
-            occlusionTextureIndex:
-                fbMat.occlusionTexture >= 0 ? fbMat.occlusionTexture : null,
-          );
+          material = {
+            'type': fbMat.type == fb.MaterialType.kUnlit ? 0 : 1,
+            if (fbMat.baseColorFactor != null)
+              'baseColorFactor': [
+                fbMat.baseColorFactor!.r,
+                fbMat.baseColorFactor!.g,
+                fbMat.baseColorFactor!.b,
+                fbMat.baseColorFactor!.a,
+              ],
+            if (fbMat.baseColorTexture >= 0)
+              'baseColorTexture': fbMat.baseColorTexture,
+            'metallicFactor': fbMat.metallicFactor,
+            'roughnessFactor': fbMat.roughnessFactor,
+            if (fbMat.metallicRoughnessTexture >= 0)
+              'metallicRoughnessTexture': fbMat.metallicRoughnessTexture,
+            if (fbMat.normalTexture >= 0) 'normalTexture': fbMat.normalTexture,
+            'normalScale': fbMat.normalScale,
+            if (fbMat.emissiveFactor != null)
+              'emissiveFactor': [
+                fbMat.emissiveFactor!.x,
+                fbMat.emissiveFactor!.y,
+                fbMat.emissiveFactor!.z,
+              ],
+            if (fbMat.emissiveTexture >= 0)
+              'emissiveTexture': fbMat.emissiveTexture,
+            'occlusionStrength': fbMat.occlusionStrength,
+            if (fbMat.occlusionTexture >= 0)
+              'occlusionTexture': fbMat.occlusionTexture,
+          };
         }
 
-        meshPrimitives.add(
-          _ParsedMeshPrimitiveData(
-            verticesBytes: vertices,
-            indicesBytes: indices,
-            vertexCount: vertexCount,
-            indexType: indexType,
-            isSkinned: isSkinned,
-            materialData: materialData,
-          ),
-        );
+        meshes.add((
+          vertices: vertices,
+          indices: indices,
+          vertexCount: vertexCount,
+          indexType: indexType,
+          isSkinned: isSkinned,
+          material: material,
+        ));
       }
     }
 
     // 解析骨骼数据
-    _ParsedSkinData? skinData;
+    _SkinData? skin;
     if (fbNode.skin != null) {
       final fbSkin = fbNode.skin!;
       final inverseBindMatrices = <Float64List>[];
@@ -274,29 +187,27 @@ _ParsedSceneData _parseFlatbufferInIsolate(Uint8List bytes) {
         final matrix = fbSkin.inverseBindMatrices![i].toMatrix4();
         inverseBindMatrices.add(Float64List.fromList(matrix.storage));
       }
-      skinData = _ParsedSkinData(
-        jointIndices: List<int>.from(fbSkin.joints ?? []),
-        inverseBindMatricesStorage: inverseBindMatrices,
+      skin = (
+        joints: List<int>.from(fbSkin.joints ?? []),
+        matrices: inverseBindMatrices,
       );
     }
 
-    parsedNodes.add(
-      _ParsedNodeData(
-        name: fbNode.name ?? '',
-        localTransformStorage: Float64List.fromList(localTransform.storage),
-        childrenIndices: List<int>.from(fbNode.children ?? []),
-        meshPrimitives: meshPrimitives,
-        skinData: skinData,
-      ),
-    );
+    nodes.add((
+      name: fbNode.name ?? '',
+      transform: Float64List.fromList(localTransform.storage),
+      children: List<int>.from(fbNode.children ?? []),
+      meshes: meshes,
+      skin: skin,
+    ));
   }
 
   // 解析动画数据
-  final List<_ParsedAnimationData> parsedAnimations = [];
+  final List<_AnimData> animations = [];
   for (fb.Animation fbAnimation in fbScene.animations ?? []) {
     if (fbAnimation.channels == null) continue;
 
-    final channels = <_ParsedAnimationChannelData>[];
+    final channels = <_ChannelData>[];
     for (fb.Channel fbChannel in fbAnimation.channels!) {
       if (fbChannel.timeline == null) continue;
 
@@ -332,31 +243,25 @@ _ParsedSceneData _parseFlatbufferInIsolate(Uint8List bytes) {
           continue;
       }
 
-      channels.add(
-        _ParsedAnimationChannelData(
-          nodeIndex: fbChannel.node,
-          property: property,
-          timeline: List<double>.from(fbChannel.timeline!),
-          values: values,
-        ),
-      );
+      channels.add((
+        nodeIndex: fbChannel.node,
+        property: property,
+        timeline: List<double>.from(fbChannel.timeline!),
+        values: values,
+      ));
     }
 
     if (channels.isNotEmpty) {
-      parsedAnimations.add(
-        _ParsedAnimationData(name: fbAnimation.name ?? '', channels: channels),
-      );
+      animations.add((name: fbAnimation.name ?? '', channels: channels));
     }
   }
 
-  return _ParsedSceneData(
-    rootTransformStorage: Float64List.fromList(rootTransform.storage),
-    textures: parsedTextures,
-    nodes: parsedNodes,
-    rootChildrenIndices: List<int>.from(fbScene.children ?? []),
-    animations: parsedAnimations,
-    nodeCount: fbScene.nodes?.length ?? 0,
-    textureCount: fbScene.textures?.length ?? 0,
+  return (
+    rootTransform: Float64List.fromList(rootTransform.storage),
+    textures: textures,
+    nodes: nodes,
+    rootChildren: List<int>.from(fbScene.children ?? []),
+    animations: animations,
   );
 }
 
@@ -416,6 +321,11 @@ base class Node implements SceneGraph {
   /// This property is `null` if this node does not have any associated geometry or material.
   Mesh? mesh;
 
+  /// The skin for skeletal animation.
+  Skin? get skin => _skin;
+
+  bool get globalVisible => visible && (_parent?.globalVisible ?? true);
+
   /// Whether this node is a joint in a skeleton for animation.
   bool isJoint = false;
 
@@ -428,6 +338,11 @@ base class Node implements SceneGraph {
   List<Animation> get parsedAnimations => _animations;
 
   AnimationPlayer? _animationPlayer;
+
+  /// Updates the animation player for this node.
+  void updateAnimation() {
+    _animationPlayer?.update();
+  }
 
   // Future<bool> isVisibleInScene(Scene scene, Camera camera) async {
   //   try {
@@ -516,64 +431,57 @@ base class Node implements SceneGraph {
     );
 
     // 在 Isolate 中解析 Flatbuffer（CPU 密集型操作）
-    final parsedData = await compute(_parseFlatbufferInIsolate, bytes);
+    final data = await compute(_parseFlatbufferInIsolate, bytes);
 
     debugPrint(
-      'Unpacking Scene (nodes: ${parsedData.nodeCount}, '
-      'textures: ${parsedData.textureCount})',
+      'Unpacking Scene (nodes: ${data.nodes.length}, '
+      'textures: ${data.textures.length})',
     );
 
     // 在主线程上创建 GPU 纹理（必须在主线程执行）
-    List<gpu.Texture> textures = [];
-    for (final parsedTexture in parsedData.textures) {
-      if (parsedTexture.hasEmbeddedImage) {
+    List<gpu.Texture> gpuTextures = [];
+    for (final tex in data.textures) {
+      if (tex.bytes != null) {
         gpu.Texture texture = gpu.gpuContext.createTexture(
           gpu.StorageMode.hostVisible,
-          parsedTexture.width!,
-          parsedTexture.height!,
+          tex.width!,
+          tex.height!,
         );
-        texture.overwrite(
-          ByteData.sublistView(parsedTexture.embeddedImageBytes!),
-        );
-        textures.add(texture);
-      } else if (parsedTexture.hasUri) {
+        texture.overwrite(ByteData.sublistView(tex.bytes!));
+        gpuTextures.add(texture);
+      } else if (tex.uri != null) {
         try {
-          textures.add(await gpuTextureFromAsset(parsedTexture.uri!));
+          gpuTextures.add(await gpuTextureFromAsset(tex.uri!));
         } catch (e) {
           debugPrint(
-            'Failed to load texture from asset URI: ${parsedTexture.uri}. '
+            'Failed to load texture from asset URI: ${tex.uri}. '
             'A white placeholder will be used instead. (Error: $e)',
           );
-          textures.add(Material.getWhitePlaceholderTexture());
+          gpuTextures.add(Material.getWhitePlaceholderTexture());
         }
       } else {
         debugPrint(
-          'Texture ${textures.length} has no embedded image or URI. A white placeholder will be used instead.',
+          'Texture ${gpuTextures.length} has no embedded image or URI. A white placeholder will be used instead.',
         );
-        textures.add(Material.getWhitePlaceholderTexture());
+        gpuTextures.add(Material.getWhitePlaceholderTexture());
       }
     }
 
     // 创建根节点
     Node result = Node(
       name: 'root',
-      localTransform: Matrix4.fromList(
-        parsedData.rootTransformStorage.toList(),
-      ),
+      localTransform: Matrix4.fromList(data.rootTransform.toList()),
     );
 
-    if (parsedData.nodes.isEmpty) {
+    if (data.nodes.isEmpty) {
       return result; // The scene is empty. ¯\_(ツ)_/¯
     }
 
     // 初始化场景节点
-    List<Node> sceneNodes = List.generate(
-      parsedData.nodes.length,
-      (_) => Node(),
-    );
+    List<Node> sceneNodes = List.generate(data.nodes.length, (_) => Node());
 
     // 连接根节点的子节点
-    for (int childIndex in parsedData.rootChildrenIndices) {
+    for (int childIndex in data.rootChildren) {
       if (childIndex < 0 || childIndex >= sceneNodes.length) {
         throw Exception('Scene child index out of range.');
       }
@@ -581,70 +489,52 @@ base class Node implements SceneGraph {
     }
 
     // 从解析后的数据构建节点
-    for (int nodeIndex = 0; nodeIndex < parsedData.nodes.length; nodeIndex++) {
-      sceneNodes[nodeIndex]._unpackFromParsedData(
-        parsedData.nodes[nodeIndex],
+    for (int nodeIndex = 0; nodeIndex < data.nodes.length; nodeIndex++) {
+      sceneNodes[nodeIndex]._unpackFromData(
+        data.nodes[nodeIndex],
         sceneNodes,
-        textures,
+        gpuTextures,
       );
     }
 
     // 构建动画
-    for (final parsedAnim in parsedData.animations) {
-      result._animations.add(
-        _buildAnimationFromParsedData(parsedAnim, sceneNodes),
-      );
+    for (final anim in data.animations) {
+      result._animations.add(_buildAnimation(anim, sceneNodes));
     }
 
     return result;
   }
 
   /// 从解析后的数据构建动画
-  static Animation _buildAnimationFromParsedData(
-    _ParsedAnimationData parsedAnim,
-    List<Node> sceneNodes,
-  ) {
+  static Animation _buildAnimation(_AnimData anim, List<Node> sceneNodes) {
     List<AnimationChannel> channels = [];
-    for (final parsedChannel in parsedAnim.channels) {
-      if (parsedChannel.nodeIndex < 0 ||
-          parsedChannel.nodeIndex >= sceneNodes.length) {
+    for (final ch in anim.channels) {
+      if (ch.nodeIndex < 0 || ch.nodeIndex >= sceneNodes.length) {
         continue;
       }
 
       AnimationProperty property;
       PropertyResolver resolver;
 
-      switch (parsedChannel.property) {
+      switch (ch.property) {
         case 0: // translation
           property = AnimationProperty.translation;
           final values =
-              parsedChannel.values
-                  .map((v) => Vector3(v[0], v[1], v[2]))
-                  .toList();
+              ch.values.map((v) => Vector3(v[0], v[1], v[2])).toList();
           resolver = PropertyResolver.makeTranslationTimeline(
-            parsedChannel.timeline,
+            ch.timeline,
             values,
           );
         case 1: // rotation
           property = AnimationProperty.rotation;
           final values =
-              parsedChannel.values
-                  .map((v) => Quaternion(v[0], v[1], v[2], v[3]))
-                  .toList();
-          resolver = PropertyResolver.makeRotationTimeline(
-            parsedChannel.timeline,
-            values,
-          );
+              ch.values.map((v) => Quaternion(v[0], v[1], v[2], v[3])).toList();
+          resolver = PropertyResolver.makeRotationTimeline(ch.timeline, values);
         case 2: // scale
           property = AnimationProperty.scale;
           final values =
-              parsedChannel.values
-                  .map((v) => Vector3(v[0], v[1], v[2]))
-                  .toList();
-          resolver = PropertyResolver.makeScaleTimeline(
-            parsedChannel.timeline,
-            values,
-          );
+              ch.values.map((v) => Vector3(v[0], v[1], v[2])).toList();
+          resolver = PropertyResolver.makeScaleTimeline(ch.timeline, values);
         default:
           continue;
       }
@@ -652,7 +542,7 @@ base class Node implements SceneGraph {
       channels.add(
         AnimationChannel(
           bindTarget: BindKey(
-            nodeName: sceneNodes[parsedChannel.nodeIndex].name,
+            nodeName: sceneNodes[ch.nodeIndex].name,
             property: property,
           ),
           resolver: resolver,
@@ -660,36 +550,31 @@ base class Node implements SceneGraph {
       );
     }
 
-    return Animation(name: parsedAnim.name, channels: channels);
+    return Animation(name: anim.name, channels: channels);
   }
 
   /// 从预解析的数据构建节点（主线程）
-  void _unpackFromParsedData(
-    _ParsedNodeData parsedNode,
+  void _unpackFromData(
+    _NodeData node,
     List<Node> sceneNodes,
     List<gpu.Texture> textures,
   ) {
-    name = parsedNode.name;
-    localTransform = Matrix4.fromList(
-      parsedNode.localTransformStorage.toList(),
-    );
+    name = node.name;
+    localTransform = Matrix4.fromList(node.transform.toList());
 
     // 从解析后的数据构建网格
-    if (parsedNode.meshPrimitives != null) {
-      List<MeshPrimitive> meshPrimitives = [];
-      for (final parsedPrimitive in parsedNode.meshPrimitives!) {
-        Geometry geometry = _buildGeometryFromParsedData(parsedPrimitive);
-        Material material = _buildMaterialFromParsedData(
-          parsedPrimitive.materialData,
-          textures,
-        );
-        meshPrimitives.add(MeshPrimitive(geometry, material));
+    if (node.meshes != null) {
+      List<MeshPrimitive> primitives = [];
+      for (final m in node.meshes!) {
+        Geometry geometry = _buildGeometry(m);
+        Material material = _buildMaterial(m.material, textures);
+        primitives.add(MeshPrimitive(geometry, material));
       }
-      mesh = Mesh.primitives(primitives: meshPrimitives);
+      mesh = Mesh.primitives(primitives: primitives);
     }
 
     // 连接子节点
-    for (int childIndex in parsedNode.childrenIndices) {
+    for (int childIndex in node.children) {
       if (childIndex < 0 || childIndex >= sceneNodes.length) {
         throw Exception('Node child index out of range.');
       }
@@ -697,121 +582,128 @@ base class Node implements SceneGraph {
     }
 
     // 构建骨骼
-    if (parsedNode.skinData != null) {
-      _skin = _buildSkinFromParsedData(parsedNode.skinData!, sceneNodes);
+    if (node.skin != null) {
+      _skin = _buildSkin(node.skin!, sceneNodes);
     }
   }
 
   /// 从解析后的数据构建 Geometry
-  static Geometry _buildGeometryFromParsedData(
-    _ParsedMeshPrimitiveData parsedPrimitive,
-  ) {
-    Geometry geometry =
-        parsedPrimitive.isSkinned ? SkinnedGeometry() : UnskinnedGeometry();
+  static Geometry _buildGeometry(_MeshData m) {
+    Geometry geometry = m.isSkinned ? SkinnedGeometry() : UnskinnedGeometry();
+    geometry.sourceIndices = m.indices;
+    geometry.sourceVertices = m.vertices;
+
     geometry.uploadVertexData(
-      ByteData.sublistView(parsedPrimitive.verticesBytes),
-      parsedPrimitive.vertexCount,
-      ByteData.sublistView(parsedPrimitive.indicesBytes),
-      indexType:
-          parsedPrimitive.indexType == 0
-              ? gpu.IndexType.int16
-              : gpu.IndexType.int32,
+      ByteData.sublistView(m.vertices),
+      m.vertexCount,
+      ByteData.sublistView(m.indices),
+      indexType: m.indexType == 0 ? gpu.IndexType.int16 : gpu.IndexType.int32,
+    );
+    final start = DateTime.now();
+    geometry.buildBounds();
+    final end = DateTime.now();
+    debugPrint(
+      'Build geometry ${m.vertexCount} bounds time: ${end.difference(start).inMilliseconds} ms',
     );
     return geometry;
   }
 
   /// 从解析后的数据构建 Material
-  static Material _buildMaterialFromParsedData(
-    _ParsedMaterialData? materialData,
+  static Material _buildMaterial(
+    _MaterialData? mat,
     List<gpu.Texture> textures,
   ) {
-    if (materialData == null) {
+    if (mat == null) {
       return UnlitMaterial();
     }
 
-    if (materialData.type == 0) {
+    final type = mat['type'] as int? ?? 1;
+    final baseColorFactor = mat['baseColorFactor'] as List<double>?;
+    final baseColorTexture = mat['baseColorTexture'] as int?;
+
+    if (type == 0) {
       // Unlit material
       final material = UnlitMaterial();
-      if (materialData.baseColorFactor != null) {
+      if (baseColorFactor != null) {
         material.baseColorFactor = Vector4(
-          materialData.baseColorFactor![0],
-          materialData.baseColorFactor![1],
-          materialData.baseColorFactor![2],
-          materialData.baseColorFactor![3],
+          baseColorFactor[0],
+          baseColorFactor[1],
+          baseColorFactor[2],
+          baseColorFactor[3],
         );
       }
-      if (materialData.baseColorTextureIndex != null &&
-          materialData.baseColorTextureIndex! < textures.length) {
-        material.baseColorTexture =
-            textures[materialData.baseColorTextureIndex!];
+      if (baseColorTexture != null && baseColorTexture < textures.length) {
+        material.baseColorTexture = textures[baseColorTexture];
       }
       return material;
     } else {
       // Physically based material
       final material = PhysicallyBasedMaterial();
-      if (materialData.baseColorFactor != null) {
+      if (baseColorFactor != null) {
         material.baseColorFactor = Vector4(
-          materialData.baseColorFactor![0],
-          materialData.baseColorFactor![1],
-          materialData.baseColorFactor![2],
-          materialData.baseColorFactor![3],
+          baseColorFactor[0],
+          baseColorFactor[1],
+          baseColorFactor[2],
+          baseColorFactor[3],
         );
       }
-      if (materialData.baseColorTextureIndex != null &&
-          materialData.baseColorTextureIndex! < textures.length) {
-        material.baseColorTexture =
-            textures[materialData.baseColorTextureIndex!];
+      if (baseColorTexture != null && baseColorTexture < textures.length) {
+        material.baseColorTexture = textures[baseColorTexture];
       }
-      material.metallicFactor = materialData.metallicFactor ?? 0;
-      material.roughnessFactor = materialData.roughnessFactor ?? 1.0;
-      if (materialData.metallicRoughnessTextureIndex != null &&
-          materialData.metallicRoughnessTextureIndex! < textures.length) {
-        material.metallicRoughnessTexture =
-            textures[materialData.metallicRoughnessTextureIndex!];
+
+      material.metallicFactor = (mat['metallicFactor'] as double?) ?? 0;
+      material.roughnessFactor = (mat['roughnessFactor'] as double?) ?? 1.0;
+
+      final metallicRoughnessTexture = mat['metallicRoughnessTexture'] as int?;
+      if (metallicRoughnessTexture != null &&
+          metallicRoughnessTexture < textures.length) {
+        material.metallicRoughnessTexture = textures[metallicRoughnessTexture];
       }
-      if (materialData.normalTextureIndex != null &&
-          materialData.normalTextureIndex! < textures.length) {
-        material.normalTexture = textures[materialData.normalTextureIndex!];
+
+      final normalTexture = mat['normalTexture'] as int?;
+      if (normalTexture != null && normalTexture < textures.length) {
+        material.normalTexture = textures[normalTexture];
       }
-      material.normalScale = materialData.normalScale ?? 1.0;
-      if (materialData.emissiveFactor != null) {
+      material.normalScale = (mat['normalScale'] as double?) ?? 1.0;
+
+      final emissiveFactor = mat['emissiveFactor'] as List<double>?;
+      if (emissiveFactor != null) {
         material.emissiveFactor = Vector4(
-          materialData.emissiveFactor![0],
-          materialData.emissiveFactor![1],
-          materialData.emissiveFactor![2],
+          emissiveFactor[0],
+          emissiveFactor[1],
+          emissiveFactor[2],
           1.0,
         );
       }
-      if (materialData.emissiveTextureIndex != null &&
-          materialData.emissiveTextureIndex! < textures.length) {
-        material.emissiveTexture = textures[materialData.emissiveTextureIndex!];
+
+      final emissiveTexture = mat['emissiveTexture'] as int?;
+      if (emissiveTexture != null && emissiveTexture < textures.length) {
+        material.emissiveTexture = textures[emissiveTexture];
       }
-      material.occlusionStrength = materialData.occlusionStrength ?? 1.0;
-      if (materialData.occlusionTextureIndex != null &&
-          materialData.occlusionTextureIndex! < textures.length) {
-        material.occlusionTexture =
-            textures[materialData.occlusionTextureIndex!];
+
+      material.occlusionStrength = (mat['occlusionStrength'] as double?) ?? 1.0;
+
+      final occlusionTexture = mat['occlusionTexture'] as int?;
+      if (occlusionTexture != null && occlusionTexture < textures.length) {
+        material.occlusionTexture = textures[occlusionTexture];
       }
       return material;
     }
   }
 
   /// 从解析后的数据构建 Skin
-  static Skin _buildSkinFromParsedData(
-    _ParsedSkinData skinData,
-    List<Node> sceneNodes,
-  ) {
-    Skin skin = Skin();
-    for (int jointIndex in skinData.jointIndices) {
+  static Skin _buildSkin(_SkinData skin, List<Node> sceneNodes) {
+    Skin result = Skin();
+    for (int jointIndex in skin.joints) {
       if (jointIndex >= 0 && jointIndex < sceneNodes.length) {
         sceneNodes[jointIndex].isJoint = true;
-        skin.joints.add(sceneNodes[jointIndex]);
+        result.joints.add(sceneNodes[jointIndex]);
       }
     }
-    for (final matrixStorage in skinData.inverseBindMatricesStorage) {
-      skin.inverseBindMatrices.add(Matrix4.fromList(matrixStorage.toList()));
+    for (final matrixStorage in skin.matrices) {
+      result.inverseBindMatrices.add(Matrix4.fromList(matrixStorage.toList()));
     }
-    return skin;
+    return result;
   }
 
   /// This list allows the node to act as a parent in the scene graph hierarchy. Transformations

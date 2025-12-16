@@ -17,6 +17,15 @@ abstract class Geometry {
   gpu.IndexType _indexType = gpu.IndexType.int16;
   int _indexCount = 0;
 
+  /// 缓存的包围盒
+  vm.Aabb3? _cachedBounds;
+
+  /// 获取几何体的包围盒
+  vm.Aabb3? get bounds => _cachedBounds;
+
+  /// 每个顶点的字节数（子类需要设置）
+  int get perVertexBytes;
+
   gpu.Shader? _vertexShader;
   gpu.Shader get vertexShader {
     if (_vertexShader == null) {
@@ -76,7 +85,52 @@ abstract class Geometry {
       ByteData.sublistView(indices),
       indexType: indexType,
     );
+
+    // 计算包围盒（从顶点位置数据）
+    geometry.buildBounds();
+
     return geometry;
+  }
+
+  /// 从顶点数据计算包围盒
+  void buildBounds() {
+    if (_vertexCount == 0) {
+      _cachedBounds = null;
+      return;
+    }
+
+    // 顶点位置在每个顶点的前12字节（3个float）
+    final floatView = ByteData.sublistView(
+      sourceVertices,
+      sourceVertices.offsetInBytes,
+      sourceVertices.offsetInBytes + sourceVertices.lengthInBytes,
+    );
+
+    double minX = double.infinity;
+    double minY = double.infinity;
+    double minZ = double.infinity;
+    double maxX = double.negativeInfinity;
+    double maxY = double.negativeInfinity;
+    double maxZ = double.negativeInfinity;
+
+    for (int i = 0; i < _vertexCount; i++) {
+      final offset = i * perVertexBytes;
+      final x = floatView.getFloat32(offset, Endian.little);
+      final y = floatView.getFloat32(offset + 4, Endian.little);
+      final z = floatView.getFloat32(offset + 8, Endian.little);
+
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (z < minZ) minZ = z;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+      if (z > maxZ) maxZ = z;
+    }
+
+    _cachedBounds = vm.Aabb3.minMax(
+      vm.Vector3(minX, minY, minZ),
+      vm.Vector3(maxX, maxY, maxZ),
+    );
   }
 
   void setVertices(gpu.BufferView vertices, int vertexCount) {
@@ -157,6 +211,13 @@ class UnskinnedGeometry extends Geometry {
   }
 
   @override
+  int get perVertexBytes => kUnskinnedPerVertexSize;
+
+  /// 预分配的 UBO 缓冲区，避免每帧创建新数组
+  /// Unskinned: 16 (model) + 16 (camera) + 3 (cameraPos) = 35 floats
+  final Float32List _frameInfoFloats = Float32List(35);
+
+  @override
   void bind(
     gpu.RenderPass pass,
     gpu.HostBuffer transientsBuffer,
@@ -175,48 +236,52 @@ class UnskinnedGeometry extends Geometry {
       pass.bindIndexBuffer(_indices!, _indexType, _indexCount);
     }
 
-    // Unskinned vertex UBO.
+    // Unskinned vertex UBO - 直接写入预分配的缓冲区
+    final floats = _frameInfoFloats;
+
+    // Model transform (16 floats)
+    floats[0] = modelTransform.storage[0];
+    floats[1] = modelTransform.storage[1];
+    floats[2] = modelTransform.storage[2];
+    floats[3] = modelTransform.storage[3];
+    floats[4] = modelTransform.storage[4];
+    floats[5] = modelTransform.storage[5];
+    floats[6] = modelTransform.storage[6];
+    floats[7] = modelTransform.storage[7];
+    floats[8] = modelTransform.storage[8];
+    floats[9] = modelTransform.storage[9];
+    floats[10] = modelTransform.storage[10];
+    floats[11] = modelTransform.storage[11];
+    floats[12] = modelTransform.storage[12];
+    floats[13] = modelTransform.storage[13];
+    floats[14] = modelTransform.storage[14];
+    floats[15] = modelTransform.storage[15];
+
+    // Camera transform (16 floats)
+    floats[16] = cameraTransform.storage[0];
+    floats[17] = cameraTransform.storage[1];
+    floats[18] = cameraTransform.storage[2];
+    floats[19] = cameraTransform.storage[3];
+    floats[20] = cameraTransform.storage[4];
+    floats[21] = cameraTransform.storage[5];
+    floats[22] = cameraTransform.storage[6];
+    floats[23] = cameraTransform.storage[7];
+    floats[24] = cameraTransform.storage[8];
+    floats[25] = cameraTransform.storage[9];
+    floats[26] = cameraTransform.storage[10];
+    floats[27] = cameraTransform.storage[11];
+    floats[28] = cameraTransform.storage[12];
+    floats[29] = cameraTransform.storage[13];
+    floats[30] = cameraTransform.storage[14];
+    floats[31] = cameraTransform.storage[15];
+
+    // Camera position (3 floats)
+    floats[32] = cameraPosition.x;
+    floats[33] = cameraPosition.y;
+    floats[34] = cameraPosition.z;
+
     final frameInfoSlot = vertexShader.getUniformSlot('FrameInfo');
-    final frameInfoFloats = Float32List.fromList([
-      modelTransform.storage[0],
-      modelTransform.storage[1],
-      modelTransform.storage[2],
-      modelTransform.storage[3],
-      modelTransform.storage[4],
-      modelTransform.storage[5],
-      modelTransform.storage[6],
-      modelTransform.storage[7],
-      modelTransform.storage[8],
-      modelTransform.storage[9],
-      modelTransform.storage[10],
-      modelTransform.storage[11],
-      modelTransform.storage[12],
-      modelTransform.storage[13],
-      modelTransform.storage[14],
-      modelTransform.storage[15],
-      cameraTransform.storage[0],
-      cameraTransform.storage[1],
-      cameraTransform.storage[2],
-      cameraTransform.storage[3],
-      cameraTransform.storage[4],
-      cameraTransform.storage[5],
-      cameraTransform.storage[6],
-      cameraTransform.storage[7],
-      cameraTransform.storage[8],
-      cameraTransform.storage[9],
-      cameraTransform.storage[10],
-      cameraTransform.storage[11],
-      cameraTransform.storage[12],
-      cameraTransform.storage[13],
-      cameraTransform.storage[14],
-      cameraTransform.storage[15],
-      cameraPosition.x,
-      cameraPosition.y,
-      cameraPosition.z,
-    ]);
-    final frameInfoView = transientsBuffer.emplace(
-      frameInfoFloats.buffer.asByteData(),
-    );
+    final frameInfoView = transientsBuffer.emplace(floats.buffer.asByteData());
     pass.bindUniform(frameInfoSlot, frameInfoView);
   }
 }
@@ -225,9 +290,16 @@ class SkinnedGeometry extends Geometry {
   gpu.Texture? _jointsTexture;
   int _jointsTextureWidth = 0;
 
+  /// 预分配的 UBO 缓冲区，避免每帧创建新数组
+  /// Skinned: 16 (model) + 16 (camera) + 3 (cameraPos) + 2 (joints info) = 37 floats
+  final Float32List _frameInfoFloats = Float32List(37);
+
   SkinnedGeometry() {
     setVertexShader(baseShaderLibrary['SkinnedVertex']!);
   }
+
+  @override
+  int get perVertexBytes => kSkinnedPerVertexSize;
 
   @override
   void setJointsTexture(gpu.Texture? texture, int width) {
@@ -270,50 +342,56 @@ class SkinnedGeometry extends Geometry {
       pass.bindIndexBuffer(_indices!, _indexType, _indexCount);
     }
 
-    // Skinned vertex UBO.
+    // Skinned vertex UBO - 直接写入预分配的缓冲区
+    final floats = _frameInfoFloats;
+
+    // Model transform (16 floats)
+    floats[0] = modelTransform.storage[0];
+    floats[1] = modelTransform.storage[1];
+    floats[2] = modelTransform.storage[2];
+    floats[3] = modelTransform.storage[3];
+    floats[4] = modelTransform.storage[4];
+    floats[5] = modelTransform.storage[5];
+    floats[6] = modelTransform.storage[6];
+    floats[7] = modelTransform.storage[7];
+    floats[8] = modelTransform.storage[8];
+    floats[9] = modelTransform.storage[9];
+    floats[10] = modelTransform.storage[10];
+    floats[11] = modelTransform.storage[11];
+    floats[12] = modelTransform.storage[12];
+    floats[13] = modelTransform.storage[13];
+    floats[14] = modelTransform.storage[14];
+    floats[15] = modelTransform.storage[15];
+
+    // Camera transform (16 floats)
+    floats[16] = cameraTransform.storage[0];
+    floats[17] = cameraTransform.storage[1];
+    floats[18] = cameraTransform.storage[2];
+    floats[19] = cameraTransform.storage[3];
+    floats[20] = cameraTransform.storage[4];
+    floats[21] = cameraTransform.storage[5];
+    floats[22] = cameraTransform.storage[6];
+    floats[23] = cameraTransform.storage[7];
+    floats[24] = cameraTransform.storage[8];
+    floats[25] = cameraTransform.storage[9];
+    floats[26] = cameraTransform.storage[10];
+    floats[27] = cameraTransform.storage[11];
+    floats[28] = cameraTransform.storage[12];
+    floats[29] = cameraTransform.storage[13];
+    floats[30] = cameraTransform.storage[14];
+    floats[31] = cameraTransform.storage[15];
+
+    // Camera position (3 floats)
+    floats[32] = cameraPosition.x;
+    floats[33] = cameraPosition.y;
+    floats[34] = cameraPosition.z;
+
+    // Joints info (2 floats)
+    floats[35] = _jointsTexture != null ? 1.0 : 0.0;
+    floats[36] = _jointsTexture != null ? _jointsTextureWidth.toDouble() : 1.0;
+
     final frameInfoSlot = vertexShader.getUniformSlot('FrameInfo');
-    final frameInfoFloats = Float32List.fromList([
-      modelTransform.storage[0],
-      modelTransform.storage[1],
-      modelTransform.storage[2],
-      modelTransform.storage[3],
-      modelTransform.storage[4],
-      modelTransform.storage[5],
-      modelTransform.storage[6],
-      modelTransform.storage[7],
-      modelTransform.storage[8],
-      modelTransform.storage[9],
-      modelTransform.storage[10],
-      modelTransform.storage[11],
-      modelTransform.storage[12],
-      modelTransform.storage[13],
-      modelTransform.storage[14],
-      modelTransform.storage[15],
-      cameraTransform.storage[0],
-      cameraTransform.storage[1],
-      cameraTransform.storage[2],
-      cameraTransform.storage[3],
-      cameraTransform.storage[4],
-      cameraTransform.storage[5],
-      cameraTransform.storage[6],
-      cameraTransform.storage[7],
-      cameraTransform.storage[8],
-      cameraTransform.storage[9],
-      cameraTransform.storage[10],
-      cameraTransform.storage[11],
-      cameraTransform.storage[12],
-      cameraTransform.storage[13],
-      cameraTransform.storage[14],
-      cameraTransform.storage[15],
-      cameraPosition.x,
-      cameraPosition.y,
-      cameraPosition.z,
-      _jointsTexture != null ? 1 : 0,
-      _jointsTexture != null ? _jointsTextureWidth.toDouble() : 1.0,
-    ]);
-    final frameInfoView = transientsBuffer.emplace(
-      frameInfoFloats.buffer.asByteData(),
-    );
+    final frameInfoView = transientsBuffer.emplace(floats.buffer.asByteData());
     pass.bindUniform(frameInfoSlot, frameInfoView);
   }
 }
