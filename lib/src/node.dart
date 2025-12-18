@@ -287,6 +287,44 @@ base class Node implements SceneGraph {
 
   Skin? _skin;
 
+  /// 获取节点在局部坐标系下的包围盒
+  /// 包含当前节点的mesh以及所有子节点（通过localTransform变换后）的包围盒
+  Aabb3 get bounds {
+    Aabb3? result;
+
+    // 合并当前节点的mesh bounds（已经是局部坐标系）
+    if (mesh != null) {
+      for (var p in mesh!.primitives) {
+        final meshBounds = p.geometry.bounds;
+        if (meshBounds != null && meshBounds.min != meshBounds.max) {
+          if (result == null) {
+            result = Aabb3.copy(meshBounds);
+          } else {
+            result.hull(meshBounds);
+          }
+        }
+      }
+    }
+
+    // 合并子节点的bounds，通过子节点的localTransform变换到当前节点的局部坐标系
+    for (var child in children) {
+      final childBounds = child.bounds;
+      if (childBounds.min != childBounds.max) {
+        final transformedChildBounds = childBounds.transformed(
+          child.localTransform,
+          Aabb3(),
+        );
+        if (result == null) {
+          result = transformedChildBounds;
+        } else {
+          result.hull(transformedChildBounds);
+        }
+      }
+    }
+
+    return result ?? Aabb3();
+  }
+
   set globalTransform(Matrix4 transform) {
     final parent = _parent;
     if (parent == null) {
@@ -341,7 +379,9 @@ base class Node implements SceneGraph {
 
   /// Updates the animation player for this node.
   void updateAnimation() {
-    _animationPlayer?.update();
+    if (_animationPlayer != null) {
+      _animationPlayer!.update();
+    }
   }
 
   // Future<bool> isVisibleInScene(Scene scene, Camera camera) async {
@@ -942,16 +982,28 @@ base class Node implements SceneGraph {
   /// Recursively records [Mesh] draw operations for this node and all its children.
   ///
   /// To display this node in a `dart:ui` [Canvas], add this node to a [Scene] and call [Scene.render] instead.
-  void render(SceneEncoder encoder, Matrix4 parentWorldTransform) {
+  void render(
+    SceneEncoder encoder,
+    Matrix4 parentWorldTransform, {
+    bool useFrustumCulling = true,
+  }) {
     if (!visible) {
       return;
+    }
+
+    final worldTransform = parentWorldTransform * localTransform;
+
+    // 视锥剔除：将局部bounds转换到世界坐标系再进行检测
+    if (useFrustumCulling) {
+      final worldBounds = bounds.transformed(worldTransform, Aabb3());
+      if (!encoder.frustum.intersectsWithAabb3(worldBounds)) {
+        return; // 完全在视锥体外，跳过整个子树
+      }
     }
 
     if (_animationPlayer != null) {
       _animationPlayer!.update();
     }
-
-    final worldTransform = parentWorldTransform * localTransform;
     if (mesh != null) {
       mesh!.render(
         encoder,
@@ -961,7 +1013,11 @@ base class Node implements SceneGraph {
       );
     }
     for (var child in children) {
-      child.render(encoder, worldTransform);
+      child.render(
+        encoder,
+        worldTransform,
+        useFrustumCulling: useFrustumCulling,
+      );
     }
   }
 }

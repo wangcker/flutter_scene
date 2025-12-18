@@ -2,8 +2,6 @@ library;
 
 export 'src/animation.dart';
 
-export 'src/culling/bvh.dart';
-
 export 'src/geometry/geometry.dart';
 
 export 'src/material/environment.dart';
