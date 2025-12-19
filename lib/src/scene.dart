@@ -114,6 +114,10 @@ base class Scene implements SceneGraph {
   /// Manages the lighting for this [Scene].
   final Environment environment = Environment();
 
+  /// 复用的对象，避免每帧创建新对象导致内存泄漏
+  final Matrix4 _identityMatrix = Matrix4.identity();
+  final ui.Paint _drawPaint = ui.Paint();
+
   /// Renders the current state of this [Scene] onto the given [ui.Canvas] using the specified [Camera].
   ///
   /// The [Camera] provides the perspective from which the scene is viewed, and the [ui.Canvas]
@@ -156,11 +160,7 @@ base class Scene implements SceneGraph {
 
     final encoder = SceneEncoder(renderTarget, camera, drawArea.size, env);
 
-    root.render(
-      encoder,
-      Matrix4.identity(),
-      useFrustumCulling: useFrustumCulling,
-    );
+    root.render(encoder, _identityMatrix, useFrustumCulling: useFrustumCulling);
 
     encoder.finish();
 
@@ -169,7 +169,7 @@ base class Scene implements SceneGraph {
             ? renderTarget.colorAttachments[0].resolveTexture!
             : renderTarget.colorAttachments[0].texture;
     final image = texture.asImage();
-    canvas.drawImage(image, drawArea.topLeft, ui.Paint());
+    canvas.drawImage(image, drawArea.topLeft, _drawPaint);
   }
 
   @override

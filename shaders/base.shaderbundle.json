@@ -1,18 +1,18 @@
 {
-    "UnskinnedVertex": {
-        "type": "vertex",
-        "file": "shaders/flutter_scene_unskinned.vert"
-    },
-    "SkinnedVertex": {
-        "type": "vertex",
-        "file": "shaders/flutter_scene_skinned.vert"
-    },
-    "UnlitFragment": {
-        "type": "fragment",
-        "file": "shaders/flutter_scene_unlit.frag"
-    },
-    "StandardFragment": {
-        "type": "fragment",
-        "file": "shaders/flutter_scene_standard.frag"
-    }
+  "UnskinnedVertex": {
+    "type": "vertex",
+    "file": "shaders/flutter_scene_unskinned.vert"
+  },
+  "SkinnedVertex": {
+    "type": "vertex",
+    "file": "shaders/flutter_scene_skinned.vert"
+  },
+  "UnlitFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_unlit.frag"
+  },
+  "StandardFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_standard.frag"
+  }
 }

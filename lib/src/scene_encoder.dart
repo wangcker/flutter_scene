@@ -56,6 +56,37 @@ class _RecordPool {
   int get length => _activeCount;
 }
 
+/// 可复用的渲染资源
+class _ReusableRenderResources {
+  static _ReusableRenderResources? _instance;
+  static _ReusableRenderResources get instance {
+    _instance ??= _ReusableRenderResources._();
+    return _instance!;
+  }
+
+  _ReusableRenderResources._();
+
+  /// 可复用的 HostBuffer
+  gpu.HostBuffer? _transientsBuffer;
+
+  gpu.HostBuffer get transientsBuffer {
+    _transientsBuffer ??= gpu.gpuContext.createHostBuffer();
+    return _transientsBuffer!;
+  }
+
+  /// 对象池，避免每帧创建新对象
+  final _RecordPool translucentPool = _RecordPool();
+  final _RecordPool highlightPool = _RecordPool();
+  final _RecordPool lastRenderPool = _RecordPool();
+
+  void reset() {
+    _transientsBuffer?.reset();
+    translucentPool.reset();
+    highlightPool.reset();
+    lastRenderPool.reset();
+  }
+}
+
 base class SceneEncoder {
   SceneEncoder(
     gpu.RenderTarget renderTarget,
@@ -66,7 +97,6 @@ base class SceneEncoder {
     _cameraTransform = _camera.getViewTransform(dimensions);
     _frustum = Frustum.matrix(_cameraTransform);
     _commandBuffer = gpu.gpuContext.createCommandBuffer();
-    _transientsBuffer = gpu.gpuContext.createHostBuffer();
 
     // Begin the opaque render pass.
     _renderPass = _commandBuffer.createRenderPass(renderTarget);
@@ -80,13 +110,11 @@ base class SceneEncoder {
   late final Matrix4 _cameraTransform;
   late final Frustum _frustum;
   late final gpu.CommandBuffer _commandBuffer;
-  late final gpu.HostBuffer _transientsBuffer;
   late final gpu.RenderPass _renderPass;
 
-  /// 对象池，避免每帧创建新对象
-  final _RecordPool _translucentPool = _RecordPool();
-  final _RecordPool _highlightPool = _RecordPool();
-  final _RecordPool _lastRenderPool = _RecordPool();
+  /// 使用共享的可复用资源
+  _ReusableRenderResources get _resources => _ReusableRenderResources.instance;
+  gpu.HostBuffer get _transientsBuffer => _resources.transientsBuffer;
 
   final List<_TranslucentRecord> _translucentRecords = [];
   final List<_TranslucentRecord> _highlightRecords = [];
@@ -126,20 +154,20 @@ base class SceneEncoder {
     if (material.isOpaque()) {
       if (material.lastRender) {
         _lastRenderRecords.add(
-          _lastRenderPool.acquire(worldTransform, geometry, material),
+          _resources.lastRenderPool.acquire(worldTransform, geometry, material),
         );
       } else if (!material.highlight) {
         _encode(worldTransform, geometry, material);
         return;
       } else {
         _highlightRecords.add(
-          _highlightPool.acquire(worldTransform, geometry, material),
+          _resources.highlightPool.acquire(worldTransform, geometry, material),
         );
       }
     }
 
     _translucentRecords.add(
-      _translucentPool.acquire(worldTransform, geometry, material),
+      _resources.translucentPool.acquire(worldTransform, geometry, material),
     );
   }
 
@@ -229,12 +257,9 @@ base class SceneEncoder {
     _highlightRecords.clear();
     _translucentRecords.clear();
 
-    // 重置对象池
-    _translucentPool.reset();
-    _highlightPool.reset();
-    _lastRenderPool.reset();
+    // 重置共享资源
+    _resources.reset();
 
     _commandBuffer.submit();
-    _transientsBuffer.reset();
   }
 }
