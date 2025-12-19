@@ -293,9 +293,18 @@ base class Node implements SceneGraph {
   double _cachedBoundingSphereRadius = 0.0;
   bool _boundingSphereDirty = true;
 
+  /// 缓存的包围盒数据
+  Aabb3? _cachedBounds;
+  bool _boundsDirty = true;
+
+  /// 复用的临时对象，避免每帧创建
+  final Aabb3 _tempWorldBounds = Aabb3();
+  final Matrix4 _cachedWorldTransform = Matrix4.identity();
+
   /// 标记包围球需要重新计算
   void invalidateBoundingSphere() {
     _boundingSphereDirty = true;
+    _boundsDirty = true;
     _parent?.invalidateBoundingSphere();
   }
 
@@ -395,9 +404,14 @@ base class Node implements SceneGraph {
     _lastMergedRadius = newRadius;
   }
 
-  /// 获取节点在局部坐标系下的包围盒
+  /// 获取节点在局部坐标系下的包围盒（带缓存）
   /// 包含当前节点的mesh以及所有子节点（通过localTransform变换后）的包围盒
   Aabb3 get bounds {
+    if (!_boundsDirty && _cachedBounds != null) {
+      return _cachedBounds!;
+    }
+    _boundsDirty = false;
+
     Aabb3? result;
 
     // 合并当前节点的mesh bounds（已经是局部坐标系）
@@ -420,17 +434,18 @@ base class Node implements SceneGraph {
       if (childBounds.min != childBounds.max) {
         final transformedChildBounds = childBounds.transformed(
           child.localTransform,
-          Aabb3(),
+          _tempWorldBounds, // 复用临时对象
         );
         if (result == null) {
-          result = transformedChildBounds;
+          result = Aabb3.copy(transformedChildBounds);
         } else {
           result.hull(transformedChildBounds);
         }
       }
     }
 
-    return result ?? Aabb3();
+    _cachedBounds = result ?? Aabb3();
+    return _cachedBounds!;
   }
 
   set globalTransform(Matrix4 transform) {
@@ -1099,12 +1114,14 @@ base class Node implements SceneGraph {
       return;
     }
 
-    final worldTransform = parentWorldTransform * localTransform;
+    // 复用缓存的世界变换矩阵
+    _cachedWorldTransform.setFrom(parentWorldTransform);
+    _cachedWorldTransform.multiply(localTransform);
 
-    // 视锥剔除：将局部bounds转换到世界坐标系再进行检测
+    // 视锥剔除：使用复用的临时包围盒
     if (useFrustumCulling) {
-      final worldBounds = bounds.transformed(worldTransform, Aabb3());
-      if (!encoder.frustum.intersectsWithAabb3(worldBounds)) {
+      bounds.transformed(_cachedWorldTransform, _tempWorldBounds);
+      if (!encoder.frustum.intersectsWithAabb3(_tempWorldBounds)) {
         return; // 完全在视锥体外，跳过整个子树
       }
     }
@@ -1115,7 +1132,7 @@ base class Node implements SceneGraph {
     if (mesh != null) {
       mesh!.render(
         encoder,
-        worldTransform,
+        _cachedWorldTransform,
         _skin?.getJointsTexture(),
         _skin?.getTextureWidth() ?? 0,
       );
@@ -1123,7 +1140,7 @@ base class Node implements SceneGraph {
     for (var child in children) {
       child.render(
         encoder,
-        worldTransform,
+        _cachedWorldTransform,
         useFrustumCulling: useFrustumCulling,
       );
     }

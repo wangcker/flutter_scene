@@ -130,6 +130,9 @@ base class SceneEncoder {
   /// 获取视锥体用于外部剔除检测
   Frustum get frustum => _frustum;
 
+  /// 复用的临时包围盒
+  final Aabb3 _tempWorldBounds = Aabb3();
+
   /// 带包围盒的编码方法，支持视锥剔除
   void encodeWithBounds(
     Matrix4 worldTransform,
@@ -139,8 +142,8 @@ base class SceneEncoder {
   ) {
     // 视锥剔除
     if (bounds != null) {
-      final worldBounds = bounds.transformed(worldTransform, Aabb3());
-      if (!_frustum.intersectsWithAabb3(worldBounds)) {
+      bounds.transformed(worldTransform, _tempWorldBounds);
+      if (!_frustum.intersectsWithAabb3(_tempWorldBounds)) {
         _culledCount++;
         return;
       }
