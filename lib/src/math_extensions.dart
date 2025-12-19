@@ -37,3 +37,22 @@ extension QuaternionSlerp on Quaternion {
     }
   }
 }
+
+extension Matrix4Scale on Matrix4 {
+  /// 获取矩阵在各轴上的最大缩放因子
+  double getMaxScaleOnAxis() {
+    final scaleXSq =
+        storage[0] * storage[0] +
+        storage[1] * storage[1] +
+        storage[2] * storage[2];
+    final scaleYSq =
+        storage[4] * storage[4] +
+        storage[5] * storage[5] +
+        storage[6] * storage[6];
+    final scaleZSq =
+        storage[8] * storage[8] +
+        storage[9] * storage[9] +
+        storage[10] * storage[10];
+    return sqrt(max(scaleXSq, max(scaleYSq, scaleZSq)));
+  }
+}

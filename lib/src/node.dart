@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' hide Matrix4;
 import 'package:flutter_gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/scene.dart';
+import 'package:flutter_scene/src/math_extensions.dart';
 import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
 import 'package:vector_math/vector_math.dart';
 
@@ -286,6 +287,113 @@ base class Node implements SceneGraph {
   Matrix4 localTransform = Matrix4.identity();
 
   Skin? _skin;
+
+  /// 缓存的包围球数据
+  Vector3? _cachedBoundingSphereCenter;
+  double _cachedBoundingSphereRadius = 0.0;
+  bool _boundingSphereDirty = true;
+
+  /// 标记包围球需要重新计算
+  void invalidateBoundingSphere() {
+    _boundingSphereDirty = true;
+    _parent?.invalidateBoundingSphere();
+  }
+
+  /// 获取节点在局部坐标系下的包围球中心
+  Vector3 get boundingSphereCenter {
+    _ensureBoundingSphere();
+    return _cachedBoundingSphereCenter ?? Vector3.zero();
+  }
+
+  /// 获取节点的包围球半径
+  double get boundingSphereRadius {
+    _ensureBoundingSphere();
+    return _cachedBoundingSphereRadius;
+  }
+
+  /// 确保包围球已计算
+  void _ensureBoundingSphere() {
+    if (!_boundingSphereDirty) return;
+    _boundingSphereDirty = false;
+
+    Vector3? center;
+    double radius = 0.0;
+
+    // 合并当前节点 mesh 的包围球
+    if (mesh != null) {
+      for (var p in mesh!.primitives) {
+        final meshCenter = p.geometry.boundingSphereCenter;
+        final meshRadius = p.geometry.boundingSphereRadius;
+        if (meshCenter != null && meshRadius > 0) {
+          if (center == null) {
+            center = Vector3.copy(meshCenter);
+            radius = meshRadius;
+          } else {
+            // 合并两个球
+            _mergeSpheres(center, radius, meshCenter, meshRadius);
+            radius = _lastMergedRadius;
+          }
+        }
+      }
+    }
+
+    // 合并子节点的包围球（变换到当前坐标系）
+    for (var child in children) {
+      final childCenter = child.boundingSphereCenter;
+      final childRadius = child.boundingSphereRadius;
+      if (childRadius > 0) {
+        // 变换子节点包围球中心到当前坐标系
+        final transformedCenter = child.localTransform.transform3(
+          Vector3.copy(childCenter),
+        );
+        // 考虑缩放对半径的影响
+        final scale = child.localTransform.getMaxScaleOnAxis();
+        final transformedRadius = childRadius * scale;
+
+        if (center == null) {
+          center = transformedCenter;
+          radius = transformedRadius;
+        } else {
+          _mergeSpheres(center, radius, transformedCenter, transformedRadius);
+          radius = _lastMergedRadius;
+        }
+      }
+    }
+
+    _cachedBoundingSphereCenter = center;
+    _cachedBoundingSphereRadius = radius;
+  }
+
+  /// 临时变量，避免每次合并时创建对象
+  double _lastMergedRadius = 0.0;
+
+  /// 合并两个包围球，结果存入 center1，半径存入 _lastMergedRadius
+  void _mergeSpheres(
+    Vector3 center1,
+    double radius1,
+    Vector3 center2,
+    double radius2,
+  ) {
+    final diff = center2 - center1;
+    final dist = diff.length;
+
+    // 一个球包含另一个
+    if (dist + radius2 <= radius1) {
+      _lastMergedRadius = radius1;
+      return;
+    }
+    if (dist + radius1 <= radius2) {
+      center1.setFrom(center2);
+      _lastMergedRadius = radius2;
+      return;
+    }
+
+    // 计算新的包围球
+    final newRadius = (dist + radius1 + radius2) * 0.5;
+    final t = (newRadius - radius1) / dist;
+    center1.add(diff * t);
+    _lastMergedRadius = newRadius;
+  }
 
   /// 获取节点在局部坐标系下的包围盒
   /// 包含当前节点的mesh以及所有子节点（通过localTransform变换后）的包围盒

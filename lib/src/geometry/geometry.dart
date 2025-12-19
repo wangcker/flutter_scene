@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
@@ -20,8 +21,18 @@ abstract class Geometry {
   /// 缓存的包围盒
   vm.Aabb3? _cachedBounds;
 
+  /// 缓存的包围球（中心点 + 半径）
+  vm.Vector3? _boundingSphereCenter;
+  double _boundingSphereRadius = 0.0;
+
   /// 获取几何体的包围盒
   vm.Aabb3? get bounds => _cachedBounds;
+
+  /// 获取包围球中心（局部坐标系）
+  vm.Vector3? get boundingSphereCenter => _boundingSphereCenter;
+
+  /// 获取包围球半径
+  double get boundingSphereRadius => _boundingSphereRadius;
 
   /// 每个顶点的字节数（子类需要设置）
   int get perVertexBytes;
@@ -92,10 +103,12 @@ abstract class Geometry {
     return geometry;
   }
 
-  /// 从顶点数据计算包围盒
+  /// 从顶点数据计算包围盒和包围球
   void buildBounds() {
     if (_vertexCount == 0) {
       _cachedBounds = null;
+      _boundingSphereCenter = null;
+      _boundingSphereRadius = 0.0;
       return;
     }
 
@@ -131,6 +144,24 @@ abstract class Geometry {
       vm.Vector3(minX, minY, minZ),
       vm.Vector3(maxX, maxY, maxZ),
     );
+
+    // 计算包围球：中心为 AABB 中心，半径为中心到最远顶点的距离
+    final centerX = (minX + maxX) * 0.5;
+    final centerY = (minY + maxY) * 0.5;
+    final centerZ = (minZ + maxZ) * 0.5;
+    _boundingSphereCenter = vm.Vector3(centerX, centerY, centerZ);
+
+    // 计算最大半径
+    double maxRadiusSq = 0.0;
+    for (int i = 0; i < _vertexCount; i++) {
+      final offset = i * perVertexBytes;
+      final x = floatView.getFloat32(offset, Endian.little) - centerX;
+      final y = floatView.getFloat32(offset + 4, Endian.little) - centerY;
+      final z = floatView.getFloat32(offset + 8, Endian.little) - centerZ;
+      final distSq = x * x + y * y + z * z;
+      if (distSq > maxRadiusSq) maxRadiusSq = distSq;
+    }
+    _boundingSphereRadius = maxRadiusSq > 0 ? math.sqrt(maxRadiusSq) : 0.0;
   }
 
   /// 手动设置自定义包围盒
