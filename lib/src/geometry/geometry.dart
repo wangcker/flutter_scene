@@ -133,6 +133,11 @@ abstract class Geometry {
     );
   }
 
+  /// 手动设置自定义包围盒
+  void buildCustomBounds(vm.Vector3 min, vm.Vector3 max) {
+    _cachedBounds = vm.Aabb3.minMax(min, max);
+  }
+
   void setVertices(gpu.BufferView vertices, int vertexCount) {
     _vertices = vertices;
     _vertexCount = vertexCount;
