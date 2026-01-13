@@ -762,12 +762,12 @@ base class Node implements SceneGraph {
       ByteData.sublistView(m.indices),
       indexType: m.indexType == 0 ? gpu.IndexType.int16 : gpu.IndexType.int32,
     );
-    final start = DateTime.now();
+    //final start = DateTime.now();
     geometry.buildBounds();
-    final end = DateTime.now();
-    debugPrint(
-      'Build geometry ${m.vertexCount} bounds time: ${end.difference(start).inMilliseconds} ms',
-    );
+    //final end = DateTime.now();
+    // debugPrint(
+    //   'Build geometry ${m.vertexCount} bounds time: ${end.difference(start).inMilliseconds} ms',
+    // );
     return geometry;
   }
 
